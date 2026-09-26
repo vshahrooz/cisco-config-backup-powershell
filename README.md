@@ -1,1 +1,265 @@
 # cisco-config-backup-powershell
+# Cisco Configuration Backup
+
+A PowerShell script for backing up the running configuration of Cisco switches over SSH using PuTTY Plink.
+
+The script is intended to work with both Cisco Nexus and Catalyst switches, including older devices that require legacy SSH algorithms.
+
+## What it does
+
+- Connects to Cisco switches using SSH
+- Uses Plink for the SSH connection
+- Backs up `show running-config`
+- Works with Cisco Nexus and Catalyst
+- Supports legacy SSH settings through a saved PuTTY session
+- Asks for the username and password when the script starts
+- Asks for the switch list and backup directory
+- Creates timestamped backup files
+- Keeps separate success and error logs
+- Keeps raw output when a backup fails
+
+## Requirements
+
+- Windows
+- PowerShell
+- PuTTY `plink.exe`
+- SSH access to the switches
+- A saved PuTTY session named `Cisco-Legacy`
+
+The script expects `plink.exe` to be in the same directory as the PowerShell script.
+
+Example:
+
+CiscoBackup/
+├── backup-switches.ps1
+├── plink.exe
+└── switch.txt
+
+## Switch list
+
+The switch list is a simple text file with one IP address or hostname per line.
+
+Example:
+
+172.16.1.1
+172.16.1.2
+172.16.1.3
+172.16.1.4
+
+Comments can be added with `#` and empty lines are ignored.
+
+## PuTTY / Plink session
+
+The script uses a saved PuTTY session called:
+
+Cisco-Legacy
+
+The saved session contains the SSH settings used by the switches.
+
+This is useful for older Cisco devices that may only offer algorithms such as:
+
+ssh-rsa
+diffie-hellman-group1-sha1
+
+These settings should be configured in PuTTY rather than passed as unsupported command-line options to Plink.
+
+For example, the script should not use:
+
+-ssh-rsa
+
+The required compatibility settings belong in the `Cisco-Legacy` saved session.
+
+## First connection to a switch
+
+When connecting to a switch for the first time, Plink may display a host-key warning.
+
+Verify the fingerprint and enter:
+
+y
+
+The host key will then be stored in the PuTTY/Plink cache for the current Windows user.
+
+A manual test can be done with:
+
+.\plink.exe -load Cisco-Legacy -ssh 172.16.1.1 -l admin
+
+## Running the backup
+
+Open PowerShell in the directory containing the script:
+
+cd C:\Users\<username>\Desktop\CiscoBackup
+
+Run:
+
+powershell.exe -ExecutionPolicy Bypass -File ".\backup-switches.ps1"
+
+The script asks for:
+
+Username:
+Enter password:
+
+Enter switch list file path (or just filename):
+Enter save folder path (or just folder name):
+
+For example:
+
+Username: admin
+Enter password: ********
+
+Enter switch list file path (or just filename): switch.txt
+Enter save folder path (or just folder name): Backup-1
+
+If only a filename or folder name is entered, it is resolved relative to the script directory.
+
+## Cisco commands
+
+For each switch, the script sends:
+
+terminal length 0
+show running-config
+exit
+
+`terminal length 0` prevents the configuration output from being interrupted by the `--More--` prompt.
+
+The resulting configuration is then saved to the selected backup directory.
+
+## Backup filenames
+
+Files are saved using:
+
+<IP>_<YYYYMMDD>_<HHMMSS>.cfg
+
+Example:
+
+172.16.1.1_20260926_081530.cfg
+
+A typical directory looks like:
+
+CiscoBackup/
+├── backup-switches.ps1
+├── plink.exe
+├── switch.txt
+├── backup_errors.log
+├── backup_results.log
+└── Backup-1/
+    ├── 172.16.1.1_20260926_081530.cfg
+    ├── 172.16.1.2_20260926_081612.cfg
+    └── 172.16.1.3_20260926_081645.cfg
+
+## Logs
+
+The script creates two log files.
+
+### backup_results.log
+
+Contains successful backup operations.
+
+### backup_errors.log
+
+Contains failed connections, command errors, and other problems detected by the script.
+
+When a backup fails, the raw Plink output can also be left in the backup directory. This is useful when troubleshooting a particular switch.
+
+## Nexus and Catalyst
+
+The same backup method is used for both Cisco Nexus and Catalyst devices.
+
+The script does not depend on a specific device prompt. It checks the returned output to determine whether the running configuration was actually received.
+
+This also avoids treating a non-zero Plink exit code as a failure when the configuration was successfully returned and saved.
+
+## Troubleshooting
+
+### no matching key exchange method found
+
+For example:
+
+Their offer: diffie-hellman-group1-sha1
+
+The switch is using an older SSH key-exchange algorithm.
+
+Check the KEX settings in the `Cisco-Legacy` PuTTY session.
+
+### no matching host key type found
+
+For example:
+
+Their offer: ssh-rsa
+
+Check the host-key settings in the `Cisco-Legacy` PuTTY session.
+
+### plink: unknown option "-ssh-rsa"
+
+Do not add `-ssh-rsa` to the PowerShell script.
+
+Configure the required SSH algorithms in the saved PuTTY session instead.
+
+### Catalyst connection works manually but the backup fails
+
+Test the switch manually:
+
+.\plink.exe -load Cisco-Legacy -ssh <IP> -l <username>
+
+Then run:
+
+terminal length 0
+show running-config
+
+If the commands work manually, check the raw Plink output generated by the backup script.
+
+## Security
+
+The script does not contain a hard-coded username or password.
+
+The password is requested at runtime.
+
+Configuration backups can contain sensitive information such as IP addresses, VLANs, routing configuration, SNMP settings, authentication settings, and network topology information.
+
+Do not publish real production configuration files in a public repository.
+
+It is also recommended not to commit the real `switch.txt` file if it contains internal infrastructure addresses.
+
+## Suggested .gitignore
+
+# Cisco configuration backups
+*.cfg
+
+# Raw backup output
+_raw_*.txt
+
+# Logs
+backup_errors.log
+backup_results.log
+
+# Local switch inventory
+switch.txt
+
+# Backup directory
+Backup-1/
+
+# Temporary files
+_temp_*.txt
+
+If `switch.txt` only contains lab/example addresses and you want to keep it in the repository, remove that line from `.gitignore`.
+
+## Repository structure
+
+A simple repository can look like this:
+
+Cisco-Configuration-Backup/
+├── README.md
+├── backup-switches.ps1
+├── plink.exe
+├── .gitignore
+└── examples/
+    └── switch.example.txt
+
+For `switch.example.txt`, use example addresses instead of real production devices.
+
+## Notes
+
+The script was written for practical network administration use and has been tested with Cisco Nexus and Catalyst environments.
+
+The exact SSH compatibility settings required by a device depend on its Cisco IOS/IOS-XE/NX-OS version and SSH configuration.
+
+Always verify a new SSH host-key fingerprint before accepting it.
